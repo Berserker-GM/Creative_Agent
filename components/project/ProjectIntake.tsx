@@ -7,16 +7,23 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
+import { CreativeDirectionsView } from "@/components/project/CreativeDirectionsView";
 import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
 import { ReferenceAnalysisPanel } from "@/components/project/ReferenceAnalysisPanel";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
 import { buildProjectContextFromDraft } from "@/lib/project/build-project-context";
+import {
+  CreativeDirectionSchema,
+  type CreativeDirection,
+} from "@/lib/schemas/creative-direction";
 import type { ProjectContext } from "@/lib/schemas/project-context";
 import {
   ProductUnderstandingSchema,
   type ProductUnderstanding,
 } from "@/lib/schemas/product-understanding";
+import type { ReferenceAnalysis } from "@/lib/schemas/reference-analysis";
 import type { ProjectIntakeDraft } from "@/lib/storage/project-draft";
+import { z } from "zod";
 import {
   getProjectDraftServerSnapshot,
   getProjectDraftSnapshot,
@@ -74,6 +81,15 @@ export function ProjectIntake() {
     null,
   );
   const [isUnderstanding, setIsUnderstanding] = useState(false);
+  const [referenceAnalyses, setReferenceAnalyses] = useState<
+    ReferenceAnalysis[]
+  >([]);
+  const [directions, setDirections] = useState<CreativeDirection[]>([]);
+  const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(
+    null,
+  );
+  const [directionsError, setDirectionsError] = useState<string | null>(null);
+  const [isGeneratingDirections, setIsGeneratingDirections] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const showDetails = detailsOpen ?? draftHasSecondaryDetails(draft);
@@ -144,6 +160,10 @@ export function ProjectIntake() {
         setSavedProject(result.data);
         setUnderstanding(null);
         setUnderstandingError(null);
+        setReferenceAnalyses([]);
+        setDirections([]);
+        setSelectedDirectionId(null);
+        setDirectionsError(null);
         setDetailsOpen(false);
       } catch {
         setSubmitError("Could not save the project in this browser.");
@@ -214,6 +234,81 @@ export function ProjectIntake() {
     }
   }
 
+  function handleReferenceAnalysisChange(analysis: ReferenceAnalysis | null) {
+    if (!analysis) return;
+    setReferenceAnalyses((previous) => {
+      const without = previous.filter(
+        (item) => item.referenceId !== analysis.referenceId,
+      );
+      return [...without, analysis];
+    });
+  }
+
+  async function handleGenerateDirections() {
+    if (!savedProject || !understanding || isGeneratingDirections) return;
+
+    setIsGeneratingDirections(true);
+    setDirectionsError(null);
+
+    try {
+      const response = await fetch("/api/agents/creative-directions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectContext: savedProject,
+          productUnderstanding: understanding,
+          referenceAnalyses,
+        }),
+      });
+
+      const payload: unknown = await response.json().catch(() => null);
+      const errorMessage =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        typeof (payload as { error: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : null;
+
+      if (!response.ok) {
+        setDirections([]);
+        setSelectedDirectionId(null);
+        setDirectionsError(
+          errorMessage || "Creative directions request failed.",
+        );
+        return;
+      }
+
+      const directionsPayload =
+        payload &&
+        typeof payload === "object" &&
+        "creativeDirections" in payload
+          ? (payload as { creativeDirections: unknown }).creativeDirections
+          : null;
+
+      const parsed = z
+        .array(CreativeDirectionSchema)
+        .length(4)
+        .safeParse(directionsPayload);
+
+      if (!parsed.success) {
+        setDirections([]);
+        setSelectedDirectionId(null);
+        setDirectionsError("Received an invalid creative directions payload.");
+        return;
+      }
+
+      setDirections(parsed.data);
+      setSelectedDirectionId(null);
+    } catch {
+      setDirections([]);
+      setSelectedDirectionId(null);
+      setDirectionsError("Could not reach the creative directions endpoint.");
+    } finally {
+      setIsGeneratingDirections(false);
+    }
+  }
+
   if (savedProject) {
     return (
       <section className="mt-10 w-full max-w-2xl" aria-live="polite">
@@ -265,6 +360,10 @@ export function ProjectIntake() {
               setSavedProject(null);
               setUnderstanding(null);
               setUnderstandingError(null);
+              setReferenceAnalyses([]);
+              setDirections([]);
+              setSelectedDirectionId(null);
+              setDirectionsError(null);
               setDetailsOpen(null);
             }}
             className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
@@ -286,7 +385,57 @@ export function ProjectIntake() {
           <ProductUnderstandingView understanding={understanding} />
         ) : null}
 
-        <ReferenceAnalysisPanel projectContext={savedProject} />
+        <ReferenceAnalysisPanel
+          projectContext={savedProject}
+          onAnalysisChange={handleReferenceAnalysisChange}
+        />
+
+        {understanding ? (
+          <section className="mt-10 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              Creative directions
+            </h2>
+            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+              Generate four distinct conceptual directions from product
+              understanding
+              {referenceAnalyses.length > 0
+                ? ` and ${referenceAnalyses.length} reference analysis${referenceAnalyses.length === 1 ? "" : "es"}`
+                : ""}
+              .
+            </p>
+            <div className="mt-4">
+              <button
+                type="button"
+                disabled={isGeneratingDirections || isUnderstanding}
+                onClick={() => {
+                  void handleGenerateDirections();
+                }}
+                className="rounded bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                {isGeneratingDirections
+                  ? "Generating…"
+                  : "Generate creative directions"}
+              </button>
+            </div>
+
+            {directionsError ? (
+              <p
+                className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                role="alert"
+              >
+                {directionsError}
+              </p>
+            ) : null}
+
+            {directions.length === 4 ? (
+              <CreativeDirectionsView
+                directions={directions}
+                selectedId={selectedDirectionId}
+                onSelect={setSelectedDirectionId}
+              />
+            ) : null}
+          </section>
+        ) : null}
       </section>
     );
   }

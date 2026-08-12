@@ -15,6 +15,8 @@ import {
 
 type ReferenceAnalysisPanelProps = {
   projectContext: ProjectContext;
+  /** Notifies parent when a validated analysis is produced or cleared. */
+  onAnalysisChange?: (analysis: ReferenceAnalysis | null) => void;
 };
 
 function createReferenceId(): string {
@@ -32,6 +34,7 @@ function formatBytes(size: number): string {
 
 export function ReferenceAnalysisPanel({
   projectContext,
+  onAnalysisChange,
 }: ReferenceAnalysisPanelProps) {
   const [referenceId, setReferenceId] = useState(createReferenceId);
   const [file, setFile] = useState<File | null>(null);
@@ -40,6 +43,11 @@ export function ReferenceAnalysisPanel({
   const [requestError, setRequestError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<ReferenceAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  function updateAnalysis(next: ReferenceAnalysis | null) {
+    setAnalysis(next);
+    onAnalysisChange?.(next);
+  }
 
   const accept = useMemo(() => ALLOWED_IMAGE_MIME_TYPES.join(","), []);
 
@@ -57,7 +65,7 @@ export function ReferenceAnalysisPanel({
   }
 
   function handleFileChange(nextFile: File | null) {
-    setAnalysis(null);
+    updateAnalysis(null);
     setRequestError(null);
 
     if (!nextFile) {
@@ -92,7 +100,7 @@ export function ReferenceAnalysisPanel({
 
     setIsAnalyzing(true);
     setRequestError(null);
-    setAnalysis(null);
+    updateAnalysis(null);
 
     try {
       const formData = new FormData();
@@ -132,7 +140,7 @@ export function ReferenceAnalysisPanel({
         return;
       }
 
-      setAnalysis(parsed.data);
+      updateAnalysis(parsed.data);
     } catch {
       setRequestError("Could not reach the reference analysis endpoint.");
     } finally {
