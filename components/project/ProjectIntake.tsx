@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
+import { ReferenceAnalysisPanel } from "@/components/project/ReferenceAnalysisPanel";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
 import { buildProjectContextFromDraft } from "@/lib/project/build-project-context";
 import type { ProjectContext } from "@/lib/schemas/project-context";
@@ -284,6 +285,8 @@ export function ProjectIntake() {
         {understanding ? (
           <ProductUnderstandingView understanding={understanding} />
         ) : null}
+
+        <ReferenceAnalysisPanel projectContext={savedProject} />
       </section>
     );
   }

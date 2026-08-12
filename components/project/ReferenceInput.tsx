@@ -95,7 +95,7 @@ export function ReferenceInput({
           Add image
           <input
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             className="sr-only"
             disabled={disabled}
             onChange={(event) => {

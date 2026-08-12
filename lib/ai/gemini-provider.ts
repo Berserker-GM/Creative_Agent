@@ -24,10 +24,22 @@ export class GeminiProvider implements AIProvider {
     const model = getGeminiModel();
     const ai = new GoogleGenAI({ apiKey });
 
+    const imageParts = (request.images ?? []).map((image) => ({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.base64Data,
+      },
+    }));
+
+    const contents =
+      imageParts.length > 0
+        ? [...imageParts, request.userPrompt]
+        : request.userPrompt;
+
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: request.userPrompt,
+        contents,
         config: {
           systemInstruction: request.systemInstruction,
           responseMimeType: "application/json",
@@ -60,6 +72,7 @@ export class GeminiProvider implements AIProvider {
       console.error("[gemini-provider] generateStructured failed", {
         model,
         status,
+        imageCount: imageParts.length,
         name: error instanceof Error ? error.name : typeof error,
         message: error instanceof Error ? error.message : "unknown error",
       });
