@@ -12,6 +12,7 @@ import { DesignGenomeView } from "@/components/project/DesignGenomeView";
 import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
 import { ReferenceAnalysisPanel } from "@/components/project/ReferenceAnalysisPanel";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
+import { VisualAssetPlanView } from "@/components/project/VisualAssetPlanView";
 import { buildProjectContextFromDraft } from "@/lib/project/build-project-context";
 import {
   CreativeDirectionSchema,
@@ -27,6 +28,10 @@ import {
   type ProductUnderstanding,
 } from "@/lib/schemas/product-understanding";
 import type { ReferenceAnalysis } from "@/lib/schemas/reference-analysis";
+import {
+  VisualAssetPlanSchema,
+  type VisualAssetPlan,
+} from "@/lib/schemas/visual-asset-plan";
 import type { ProjectIntakeDraft } from "@/lib/storage/project-draft";
 import { z } from "zod";
 import {
@@ -98,6 +103,10 @@ export function ProjectIntake() {
   const [designGenome, setDesignGenome] = useState<DesignGenome | null>(null);
   const [genomeError, setGenomeError] = useState<string | null>(null);
   const [isBuildingGenome, setIsBuildingGenome] = useState(false);
+  const [visualAssetPlan, setVisualAssetPlan] =
+    useState<VisualAssetPlan | null>(null);
+  const [assetPlanError, setAssetPlanError] = useState<string | null>(null);
+  const [isPlanningAssets, setIsPlanningAssets] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const selectedDirection =
@@ -108,6 +117,8 @@ export function ProjectIntake() {
     setSelectedDirectionId(id);
     setDesignGenome(null);
     setGenomeError(null);
+    setVisualAssetPlan(null);
+    setAssetPlanError(null);
   }
 
   const showDetails = detailsOpen ?? draftHasSecondaryDetails(draft);
@@ -293,6 +304,8 @@ export function ProjectIntake() {
         setSelectedDirectionId(null);
         setDesignGenome(null);
         setGenomeError(null);
+        setVisualAssetPlan(null);
+        setAssetPlanError(null);
         setDirectionsError(
           errorMessage || "Creative directions request failed.",
         );
@@ -316,6 +329,8 @@ export function ProjectIntake() {
         setSelectedDirectionId(null);
         setDesignGenome(null);
         setGenomeError(null);
+        setVisualAssetPlan(null);
+        setAssetPlanError(null);
         setDirectionsError("Received an invalid creative directions payload.");
         return;
       }
@@ -324,11 +339,15 @@ export function ProjectIntake() {
       setSelectedDirectionId(null);
       setDesignGenome(null);
       setGenomeError(null);
+      setVisualAssetPlan(null);
+      setAssetPlanError(null);
     } catch {
       setDirections([]);
       setSelectedDirectionId(null);
       setDesignGenome(null);
       setGenomeError(null);
+      setVisualAssetPlan(null);
+      setAssetPlanError(null);
       setDirectionsError("Could not reach the creative directions endpoint.");
     } finally {
       setIsGeneratingDirections(false);
@@ -371,6 +390,8 @@ export function ProjectIntake() {
 
       if (!response.ok) {
         setDesignGenome(null);
+        setVisualAssetPlan(null);
+        setAssetPlanError(null);
         setGenomeError(errorMessage || "Design genome request failed.");
         return;
       }
@@ -383,16 +404,85 @@ export function ProjectIntake() {
       const parsed = DesignGenomeSchema.safeParse(genomePayload);
       if (!parsed.success) {
         setDesignGenome(null);
+        setVisualAssetPlan(null);
+        setAssetPlanError(null);
         setGenomeError("Received an invalid design genome payload.");
         return;
       }
 
       setDesignGenome(parsed.data);
+      setVisualAssetPlan(null);
+      setAssetPlanError(null);
     } catch {
       setDesignGenome(null);
+      setVisualAssetPlan(null);
+      setAssetPlanError(null);
       setGenomeError("Could not reach the design genome endpoint.");
     } finally {
       setIsBuildingGenome(false);
+    }
+  }
+
+  async function handlePlanVisualAssets() {
+    if (
+      !savedProject ||
+      !understanding ||
+      !selectedDirection ||
+      !designGenome ||
+      isPlanningAssets
+    ) {
+      return;
+    }
+
+    setIsPlanningAssets(true);
+    setAssetPlanError(null);
+
+    try {
+      const response = await fetch("/api/agents/visual-asset-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectContext: savedProject,
+          productUnderstanding: understanding,
+          creativeDirection: selectedDirection,
+          designGenome,
+          referenceAnalyses,
+        }),
+      });
+
+      const payload: unknown = await response.json().catch(() => null);
+      const errorMessage =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        typeof (payload as { error: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : null;
+
+      if (!response.ok) {
+        setVisualAssetPlan(null);
+        setAssetPlanError(errorMessage || "Visual asset plan request failed.");
+        return;
+      }
+
+      const planPayload =
+        payload && typeof payload === "object" && "visualAssetPlan" in payload
+          ? (payload as { visualAssetPlan: unknown }).visualAssetPlan
+          : null;
+
+      const parsed = VisualAssetPlanSchema.safeParse(planPayload);
+      if (!parsed.success) {
+        setVisualAssetPlan(null);
+        setAssetPlanError("Received an invalid visual asset plan payload.");
+        return;
+      }
+
+      setVisualAssetPlan(parsed.data);
+    } catch {
+      setVisualAssetPlan(null);
+      setAssetPlanError("Could not reach the visual asset plan endpoint.");
+    } finally {
+      setIsPlanningAssets(false);
     }
   }
 
@@ -453,6 +543,8 @@ export function ProjectIntake() {
               setDirectionsError(null);
               setDesignGenome(null);
               setGenomeError(null);
+              setVisualAssetPlan(null);
+              setAssetPlanError(null);
               setDetailsOpen(null);
             }}
             className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
@@ -564,10 +656,57 @@ export function ProjectIntake() {
                 ) : null}
 
                 {designGenome ? (
-                  <DesignGenomeView
-                    genome={designGenome}
-                    creativeDirectionName={selectedDirection.name}
-                  />
+                  <>
+                    <DesignGenomeView
+                      genome={designGenome}
+                      creativeDirectionName={selectedDirection.name}
+                    />
+
+                    <section className="mt-10 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+                      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                        Visual asset plan
+                      </h2>
+                      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                        Decide which visual assets this direction and genome
+                        actually need — plans only, not generated images.
+                      </p>
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          disabled={
+                            isPlanningAssets ||
+                            isBuildingGenome ||
+                            isGeneratingDirections ||
+                            isUnderstanding
+                          }
+                          onClick={() => {
+                            void handlePlanVisualAssets();
+                          }}
+                          className="rounded bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                        >
+                          {isPlanningAssets
+                            ? "Planning…"
+                            : "Plan visual assets"}
+                        </button>
+                      </div>
+
+                      {assetPlanError ? (
+                        <p
+                          className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                          role="alert"
+                        >
+                          {assetPlanError}
+                        </p>
+                      ) : null}
+
+                      {visualAssetPlan ? (
+                        <VisualAssetPlanView
+                          plan={visualAssetPlan}
+                          creativeDirectionName={selectedDirection.name}
+                        />
+                      ) : null}
+                    </section>
+                  </>
                 ) : null}
               </section>
             ) : null}
