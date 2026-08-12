@@ -7,9 +7,14 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
+import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
 import { buildProjectContextFromDraft } from "@/lib/project/build-project-context";
 import type { ProjectContext } from "@/lib/schemas/project-context";
+import {
+  ProductUnderstandingSchema,
+  type ProductUnderstanding,
+} from "@/lib/schemas/product-understanding";
 import type { ProjectIntakeDraft } from "@/lib/storage/project-draft";
 import {
   getProjectDraftServerSnapshot,
@@ -62,6 +67,12 @@ export function ProjectIntake() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [savedProject, setSavedProject] = useState<ProjectContext | null>(null);
+  const [understanding, setUnderstanding] =
+    useState<ProductUnderstanding | null>(null);
+  const [understandingError, setUnderstandingError] = useState<string | null>(
+    null,
+  );
+  const [isUnderstanding, setIsUnderstanding] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const showDetails = detailsOpen ?? draftHasSecondaryDetails(draft);
@@ -130,11 +141,76 @@ export function ProjectIntake() {
         resetProjectDraft();
         setPendingFiles({});
         setSavedProject(result.data);
+        setUnderstanding(null);
+        setUnderstandingError(null);
         setDetailsOpen(false);
       } catch {
         setSubmitError("Could not save the project in this browser.");
       }
     });
+  }
+
+  async function handleUnderstandProject() {
+    if (!savedProject || isUnderstanding) return;
+
+    setIsUnderstanding(true);
+    setUnderstandingError(null);
+
+    try {
+      const response = await fetch("/api/agents/product-understanding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(savedProject),
+      });
+
+      const payload: unknown = await response.json().catch(() => null);
+      const errorMessage =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        typeof (payload as { error: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : null;
+
+      if (!response.ok) {
+        setUnderstanding(null);
+        setUnderstandingError(
+          errorMessage || "Product understanding request failed.",
+        );
+        return;
+      }
+
+      const understandingPayload =
+        payload &&
+        typeof payload === "object" &&
+        "productUnderstanding" in payload
+          ? (payload as { productUnderstanding: unknown }).productUnderstanding
+          : null;
+
+      if (!understandingPayload) {
+        setUnderstanding(null);
+        setUnderstandingError("Unexpected response from the server.");
+        return;
+      }
+
+      const parsed = ProductUnderstandingSchema.safeParse(understandingPayload);
+      if (!parsed.success) {
+        setUnderstanding(null);
+        setUnderstandingError(
+          "Received an invalid ProductUnderstanding payload.",
+        );
+        return;
+      }
+
+      setUnderstanding(parsed.data);
+    } catch {
+      setUnderstanding(null);
+      setUnderstandingError(
+        "Could not reach the product understanding endpoint.",
+      );
+    } finally {
+      setIsUnderstanding(false);
+    }
   }
 
   if (savedProject) {
@@ -173,15 +249,41 @@ export function ProjectIntake() {
         <div className="mt-8 flex flex-wrap gap-3">
           <button
             type="button"
+            disabled={isUnderstanding}
+            onClick={() => {
+              void handleUnderstandProject();
+            }}
+            className="rounded bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          >
+            {isUnderstanding ? "Understanding…" : "Understand my project"}
+          </button>
+          <button
+            type="button"
+            disabled={isUnderstanding}
             onClick={() => {
               setSavedProject(null);
+              setUnderstanding(null);
+              setUnderstandingError(null);
               setDetailsOpen(null);
             }}
-            className="rounded bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+            className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
           >
             Start another project
           </button>
         </div>
+
+        {understandingError ? (
+          <p
+            className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+            role="alert"
+          >
+            {understandingError}
+          </p>
+        ) : null}
+
+        {understanding ? (
+          <ProductUnderstandingView understanding={understanding} />
+        ) : null}
       </section>
     );
   }
