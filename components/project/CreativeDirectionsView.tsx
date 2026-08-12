@@ -48,8 +48,8 @@ export function CreativeDirectionsView({
           AI-generated creative directions
         </p>
         <p className="mt-1 text-sm text-zinc-500">
-          Four distinct conceptual directions. Select one to continue later —
-          selection is session-only for now.
+          Four distinct conceptual directions. Select one concept, then build
+          its design genome — selection is session-only for now.
         </p>
       </div>
 

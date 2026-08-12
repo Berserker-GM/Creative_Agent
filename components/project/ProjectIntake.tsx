@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { CreativeDirectionsView } from "@/components/project/CreativeDirectionsView";
+import { DesignGenomeView } from "@/components/project/DesignGenomeView";
 import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
 import { ReferenceAnalysisPanel } from "@/components/project/ReferenceAnalysisPanel";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
@@ -16,6 +17,10 @@ import {
   CreativeDirectionSchema,
   type CreativeDirection,
 } from "@/lib/schemas/creative-direction";
+import {
+  DesignGenomeSchema,
+  type DesignGenome,
+} from "@/lib/schemas/design-genome";
 import type { ProjectContext } from "@/lib/schemas/project-context";
 import {
   ProductUnderstandingSchema,
@@ -90,7 +95,20 @@ export function ProjectIntake() {
   );
   const [directionsError, setDirectionsError] = useState<string | null>(null);
   const [isGeneratingDirections, setIsGeneratingDirections] = useState(false);
+  const [designGenome, setDesignGenome] = useState<DesignGenome | null>(null);
+  const [genomeError, setGenomeError] = useState<string | null>(null);
+  const [isBuildingGenome, setIsBuildingGenome] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const selectedDirection =
+    directions.find((direction) => direction.id === selectedDirectionId) ??
+    null;
+
+  function handleSelectDirection(id: string) {
+    setSelectedDirectionId(id);
+    setDesignGenome(null);
+    setGenomeError(null);
+  }
 
   const showDetails = detailsOpen ?? draftHasSecondaryDetails(draft);
 
@@ -273,6 +291,8 @@ export function ProjectIntake() {
       if (!response.ok) {
         setDirections([]);
         setSelectedDirectionId(null);
+        setDesignGenome(null);
+        setGenomeError(null);
         setDirectionsError(
           errorMessage || "Creative directions request failed.",
         );
@@ -294,18 +314,85 @@ export function ProjectIntake() {
       if (!parsed.success) {
         setDirections([]);
         setSelectedDirectionId(null);
+        setDesignGenome(null);
+        setGenomeError(null);
         setDirectionsError("Received an invalid creative directions payload.");
         return;
       }
 
       setDirections(parsed.data);
       setSelectedDirectionId(null);
+      setDesignGenome(null);
+      setGenomeError(null);
     } catch {
       setDirections([]);
       setSelectedDirectionId(null);
+      setDesignGenome(null);
+      setGenomeError(null);
       setDirectionsError("Could not reach the creative directions endpoint.");
     } finally {
       setIsGeneratingDirections(false);
+    }
+  }
+
+  async function handleBuildDesignGenome() {
+    if (
+      !savedProject ||
+      !understanding ||
+      !selectedDirection ||
+      isBuildingGenome
+    ) {
+      return;
+    }
+
+    setIsBuildingGenome(true);
+    setGenomeError(null);
+
+    try {
+      const response = await fetch("/api/agents/design-genome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectContext: savedProject,
+          productUnderstanding: understanding,
+          creativeDirection: selectedDirection,
+          referenceAnalyses,
+        }),
+      });
+
+      const payload: unknown = await response.json().catch(() => null);
+      const errorMessage =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        typeof (payload as { error: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : null;
+
+      if (!response.ok) {
+        setDesignGenome(null);
+        setGenomeError(errorMessage || "Design genome request failed.");
+        return;
+      }
+
+      const genomePayload =
+        payload && typeof payload === "object" && "designGenome" in payload
+          ? (payload as { designGenome: unknown }).designGenome
+          : null;
+
+      const parsed = DesignGenomeSchema.safeParse(genomePayload);
+      if (!parsed.success) {
+        setDesignGenome(null);
+        setGenomeError("Received an invalid design genome payload.");
+        return;
+      }
+
+      setDesignGenome(parsed.data);
+    } catch {
+      setDesignGenome(null);
+      setGenomeError("Could not reach the design genome endpoint.");
+    } finally {
+      setIsBuildingGenome(false);
     }
   }
 
@@ -364,6 +451,8 @@ export function ProjectIntake() {
               setDirections([]);
               setSelectedDirectionId(null);
               setDirectionsError(null);
+              setDesignGenome(null);
+              setGenomeError(null);
               setDetailsOpen(null);
             }}
             className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
@@ -431,8 +520,56 @@ export function ProjectIntake() {
               <CreativeDirectionsView
                 directions={directions}
                 selectedId={selectedDirectionId}
-                onSelect={setSelectedDirectionId}
+                onSelect={handleSelectDirection}
               />
+            ) : null}
+
+            {selectedDirection ? (
+              <section className="mt-10 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                  Design genome
+                </h2>
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                  You selected{" "}
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    {selectedDirection.name}
+                  </span>
+                  . Build the visual/experiential rules derived from that
+                  concept — not the final frontend.
+                </p>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    disabled={
+                      isBuildingGenome ||
+                      isGeneratingDirections ||
+                      isUnderstanding
+                    }
+                    onClick={() => {
+                      void handleBuildDesignGenome();
+                    }}
+                    className="rounded bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                  >
+                    {isBuildingGenome ? "Building…" : "Build design genome"}
+                  </button>
+                </div>
+
+                {genomeError ? (
+                  <p
+                    className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                    role="alert"
+                  >
+                    {genomeError}
+                  </p>
+                ) : null}
+
+                {designGenome ? (
+                  <DesignGenomeView
+                    genome={designGenome}
+                    creativeDirectionName={selectedDirection.name}
+                  />
+                ) : null}
+              </section>
             ) : null}
           </section>
         ) : null}
