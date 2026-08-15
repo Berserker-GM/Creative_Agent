@@ -9,6 +9,7 @@ import {
 } from "react";
 import { CreativeDirectionsView } from "@/components/project/CreativeDirectionsView";
 import { DesignGenomeView } from "@/components/project/DesignGenomeView";
+import { ImageGenerationView } from "@/components/project/ImageGenerationView";
 import { ProductUnderstandingView } from "@/components/project/ProductUnderstandingView";
 import { ReferenceAnalysisPanel } from "@/components/project/ReferenceAnalysisPanel";
 import { ReferenceInput } from "@/components/project/ReferenceInput";
@@ -22,6 +23,7 @@ import {
   DesignGenomeSchema,
   type DesignGenome,
 } from "@/lib/schemas/design-genome";
+import type { GeneratedImage } from "@/lib/schemas/generated-image";
 import type { ProjectContext } from "@/lib/schemas/project-context";
 import {
   ProductUnderstandingSchema,
@@ -107,11 +109,22 @@ export function ProjectIntake() {
     useState<VisualAssetPlan | null>(null);
   const [assetPlanError, setAssetPlanError] = useState<string | null>(null);
   const [isPlanningAssets, setIsPlanningAssets] = useState(false);
+  const [generatedByAssetId, setGeneratedByAssetId] = useState<
+    Record<string, GeneratedImage>
+  >({});
+  const [selectedGenerationAssetId, setSelectedGenerationAssetId] = useState<
+    string | null
+  >(null);
   const [isPending, startTransition] = useTransition();
 
   const selectedDirection =
     directions.find((direction) => direction.id === selectedDirectionId) ??
     null;
+
+  function clearGeneratedVisuals() {
+    setGeneratedByAssetId({});
+    setSelectedGenerationAssetId(null);
+  }
 
   function handleSelectDirection(id: string) {
     setSelectedDirectionId(id);
@@ -119,6 +132,7 @@ export function ProjectIntake() {
     setGenomeError(null);
     setVisualAssetPlan(null);
     setAssetPlanError(null);
+    clearGeneratedVisuals();
   }
 
   const showDetails = detailsOpen ?? draftHasSecondaryDetails(draft);
@@ -306,6 +320,7 @@ export function ProjectIntake() {
         setGenomeError(null);
         setVisualAssetPlan(null);
         setAssetPlanError(null);
+        clearGeneratedVisuals();
         setDirectionsError(
           errorMessage || "Creative directions request failed.",
         );
@@ -331,6 +346,7 @@ export function ProjectIntake() {
         setGenomeError(null);
         setVisualAssetPlan(null);
         setAssetPlanError(null);
+        clearGeneratedVisuals();
         setDirectionsError("Received an invalid creative directions payload.");
         return;
       }
@@ -341,6 +357,7 @@ export function ProjectIntake() {
       setGenomeError(null);
       setVisualAssetPlan(null);
       setAssetPlanError(null);
+      clearGeneratedVisuals();
     } catch {
       setDirections([]);
       setSelectedDirectionId(null);
@@ -348,6 +365,7 @@ export function ProjectIntake() {
       setGenomeError(null);
       setVisualAssetPlan(null);
       setAssetPlanError(null);
+      clearGeneratedVisuals();
       setDirectionsError("Could not reach the creative directions endpoint.");
     } finally {
       setIsGeneratingDirections(false);
@@ -392,6 +410,7 @@ export function ProjectIntake() {
         setDesignGenome(null);
         setVisualAssetPlan(null);
         setAssetPlanError(null);
+        clearGeneratedVisuals();
         setGenomeError(errorMessage || "Design genome request failed.");
         return;
       }
@@ -406,6 +425,7 @@ export function ProjectIntake() {
         setDesignGenome(null);
         setVisualAssetPlan(null);
         setAssetPlanError(null);
+        clearGeneratedVisuals();
         setGenomeError("Received an invalid design genome payload.");
         return;
       }
@@ -413,10 +433,12 @@ export function ProjectIntake() {
       setDesignGenome(parsed.data);
       setVisualAssetPlan(null);
       setAssetPlanError(null);
+      clearGeneratedVisuals();
     } catch {
       setDesignGenome(null);
       setVisualAssetPlan(null);
       setAssetPlanError(null);
+      clearGeneratedVisuals();
       setGenomeError("Could not reach the design genome endpoint.");
     } finally {
       setIsBuildingGenome(false);
@@ -461,6 +483,7 @@ export function ProjectIntake() {
 
       if (!response.ok) {
         setVisualAssetPlan(null);
+        clearGeneratedVisuals();
         setAssetPlanError(errorMessage || "Visual asset plan request failed.");
         return;
       }
@@ -473,13 +496,16 @@ export function ProjectIntake() {
       const parsed = VisualAssetPlanSchema.safeParse(planPayload);
       if (!parsed.success) {
         setVisualAssetPlan(null);
+        clearGeneratedVisuals();
         setAssetPlanError("Received an invalid visual asset plan payload.");
         return;
       }
 
       setVisualAssetPlan(parsed.data);
+      clearGeneratedVisuals();
     } catch {
       setVisualAssetPlan(null);
+      clearGeneratedVisuals();
       setAssetPlanError("Could not reach the visual asset plan endpoint.");
     } finally {
       setIsPlanningAssets(false);
@@ -545,6 +571,7 @@ export function ProjectIntake() {
               setGenomeError(null);
               setVisualAssetPlan(null);
               setAssetPlanError(null);
+              clearGeneratedVisuals();
               setDetailsOpen(null);
             }}
             className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
@@ -700,10 +727,48 @@ export function ProjectIntake() {
                       ) : null}
 
                       {visualAssetPlan ? (
-                        <VisualAssetPlanView
-                          plan={visualAssetPlan}
-                          creativeDirectionName={selectedDirection.name}
-                        />
+                        <>
+                          <VisualAssetPlanView
+                            plan={visualAssetPlan}
+                            creativeDirectionName={selectedDirection.name}
+                          />
+
+                          <section className="mt-10 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+                            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                              Generate visual
+                            </h2>
+                            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                              Select one planned asset and generate a single
+                              visual from the Creative Direction, Design Genome,
+                              and Visual Asset Plan. Session-only — not
+                              permanently saved.
+                            </p>
+                            <ImageGenerationView
+                              projectContext={savedProject}
+                              productUnderstanding={understanding}
+                              creativeDirection={selectedDirection}
+                              designGenome={designGenome}
+                              visualAssetPlan={visualAssetPlan}
+                              referenceAnalyses={referenceAnalyses}
+                              generatedByAssetId={generatedByAssetId}
+                              selectedAssetId={selectedGenerationAssetId}
+                              onSelectAsset={setSelectedGenerationAssetId}
+                              onGenerated={(assetId, image) => {
+                                setGeneratedByAssetId((prev) => ({
+                                  ...prev,
+                                  [assetId]: image,
+                                }));
+                              }}
+                              onClearAssetImage={(assetId) => {
+                                setGeneratedByAssetId((prev) => {
+                                  const next = { ...prev };
+                                  delete next[assetId];
+                                  return next;
+                                });
+                              }}
+                            />
+                          </section>
+                        </>
                       ) : null}
                     </section>
                   </>
