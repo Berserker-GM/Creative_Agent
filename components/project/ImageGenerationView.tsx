@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MotionGenerationView } from "@/components/project/MotionGenerationView";
 import type { CreativeDirection } from "@/lib/schemas/creative-direction";
 import type { DesignGenome } from "@/lib/schemas/design-genome";
 import {
@@ -210,21 +211,34 @@ export function ImageGenerationView({
           ) : null}
 
           {generatedImage ? (
-            <figure className="overflow-hidden border border-zinc-200 dark:border-zinc-800">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={toDataUrl(generatedImage)}
-                alt={`${selectedAsset.name} generated visual`}
-                className="aspect-video w-full object-cover"
+            <>
+              <figure className="overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={toDataUrl(generatedImage)}
+                  alt={`${selectedAsset.name} generated visual`}
+                  className="aspect-video w-full object-cover"
+                />
+                <figcaption className="space-y-1 p-3 text-xs text-zinc-500">
+                  <p>
+                    Status: {generatedImage.status} · {generatedImage.provider}/
+                    {generatedImage.model}
+                  </p>
+                  <p className="font-mono">asset: {generatedImage.assetId}</p>
+                </figcaption>
+              </figure>
+
+              <MotionGenerationView
+                projectContext={projectContext}
+                productUnderstanding={productUnderstanding}
+                creativeDirection={creativeDirection}
+                designGenome={designGenome}
+                visualAssetPlan={visualAssetPlan}
+                visualAsset={selectedAsset}
+                generatedImage={generatedImage}
+                referenceAnalyses={referenceAnalyses}
               />
-              <figcaption className="space-y-1 p-3 text-xs text-zinc-500">
-                <p>
-                  Status: {generatedImage.status} · {generatedImage.provider}/
-                  {generatedImage.model}
-                </p>
-                <p className="font-mono">asset: {generatedImage.assetId}</p>
-              </figcaption>
-            </figure>
+            </>
           ) : null}
         </div>
       ) : (
